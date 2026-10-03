@@ -1,0 +1,425 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import toast from "react-hot-toast";
+import { 
+  CreditCard, 
+  ShieldCheck, 
+  Lock, 
+  ArrowLeft, 
+  Truck, 
+  ShoppingBag,
+  CheckCircle2,
+  AlertCircle,
+  IndianRupee
+} from "lucide-react";
+import { useCartStore, ensureAuthenticated } from "@/store/cartStore";
+import { useAuthStore } from "@/store/authStore";
+import ordersApi from "@/lib/api/orders";
+
+const checkoutSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  email: z.string().email("Invalid email address"),
+  address1: z.string().min(5, "Street address must be at least 5 characters"),
+  address2: z.string().optional(),
+  city: z.string().min(2, "City is required"),
+  state: z.string().min(2, "State / Province is required"),
+  postalCode: z.string().min(3, "Valid ZIP / Postal code is required"),
+  country: z.string().min(2, "Country is required"),
+  notes: z.string().optional(),
+  paymentMethod: z.enum(["card", "cash_on_delivery"]),
+});
+
+type CheckoutFormData = z.infer<typeof checkoutSchema>;
+
+export default function CheckoutPage() {
+  const router = useRouter();
+  const { cart, fetchCart, clearCart } = useCartStore();
+  const { user } = useAuthStore();
+  const [submitting, setSubmitting] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<CheckoutFormData>({
+    resolver: zodResolver(checkoutSchema),
+    defaultValues: {
+      fullName: user?.name || "John Customer",
+      email: user?.email || "customer@smartecommerce.com",
+      address1: "123 Innovation Blvd, Suite 400",
+      city: "San Francisco",
+      state: "CA",
+      postalCode: "94107",
+      country: "United States",
+      paymentMethod: "card",
+    },
+  });
+
+  useEffect(() => {
+    fetchCart().catch(() => {});
+  }, [fetchCart]);
+
+  useEffect(() => {
+    if (user) {
+      if (user.name) setValue("fullName", user.name);
+      if (user.email) setValue("email", user.email);
+    }
+  }, [user, setValue]);
+
+  const items = cart?.items || [];
+  const subtotal = cart?.subtotal || items.reduce((acc, item) => acc + item.line_total, 0) || 0;
+  const shipping = subtotal > 100 || subtotal === 0 ? 0 : 9.99;
+  const tax = subtotal * 0.08;
+  const total = subtotal + shipping + tax;
+
+  const onSubmit = async (data: CheckoutFormData) => {
+    if (items.length === 0) {
+      toast.error("Your cart is empty. Please add products first.");
+      router.push("/products");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await ensureAuthenticated();
+      const formattedAddress = `${data.fullName}, ${data.address1}${
+        data.address2 ? ` (${data.address2})` : ""
+      }, ${data.city}, ${data.state} ${data.postalCode}, ${data.country}`;
+
+      const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+
+      const res = await ordersApi.checkout({
+        shipping_address: formattedAddress,
+        notes: data.notes || undefined,
+        success_url: `${origin}/checkout/success`,
+        cancel_url: `${origin}/cart`,
+        payment_method: data.paymentMethod,
+      });
+
+      toast.success("Order placed successfully! 🎉");
+
+      // If Stripe checkout URL is provided, redirect to Stripe
+      if (res.checkout_url) {
+        window.location.href = res.checkout_url;
+      } else {
+        // Direct confirmation in dev / test mode
+        await fetchCart();
+        router.push(`/checkout/success?order_id=${res.order_id}`);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Failed to process order";
+      toast.error(msg);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 min-h-screen py-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-6">
+          <Link
+            href="/cart"
+            className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-indigo-600 font-semibold transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Return to Cart
+          </Link>
+          <h1 className="text-3xl font-extrabold text-slate-900 mt-2">Secure Checkout</h1>
+          <p className="text-sm text-slate-500">Provide shipping and payment information to complete your order</p>
+        </div>
+
+        <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left column: Shipping Details & Payment Info */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* Shipping Address Card */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">
+                  1
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Shipping Details</h2>
+                  <p className="text-xs text-slate-500">Where should we deliver your order?</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    {...register("fullName")}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    placeholder="John Doe"
+                  />
+                  {errors.fullName && <p className="text-xs text-rose-600 mt-1">{errors.fullName.message}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    {...register("email")}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    placeholder="john@example.com"
+                  />
+                  {errors.email && <p className="text-xs text-rose-600 mt-1">{errors.email.message}</p>}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Street Address *
+                </label>
+                <input
+                  type="text"
+                  {...register("address1")}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                  placeholder="123 Innovation Blvd, Suite 400"
+                />
+                {errors.address1 && <p className="text-xs text-rose-600 mt-1">{errors.address1.message}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Apartment, Suite, Unit (Optional)
+                </label>
+                <input
+                  type="text"
+                  {...register("address2")}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                  placeholder="Apt 4B"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    City *
+                  </label>
+                  <input
+                    type="text"
+                    {...register("city")}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    placeholder="San Francisco"
+                  />
+                  {errors.city && <p className="text-xs text-rose-600 mt-1">{errors.city.message}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    State / Province *
+                  </label>
+                  <input
+                    type="text"
+                    {...register("state")}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    placeholder="CA"
+                  />
+                  {errors.state && <p className="text-xs text-rose-600 mt-1">{errors.state.message}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    ZIP Code *
+                  </label>
+                  <input
+                    type="text"
+                    {...register("postalCode")}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    placeholder="94107"
+                  />
+                  {errors.postalCode && <p className="text-xs text-rose-600 mt-1">{errors.postalCode.message}</p>}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Country *
+                </label>
+                <input
+                  type="text"
+                  {...register("country")}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                  placeholder="United States"
+                />
+                {errors.country && <p className="text-xs text-rose-600 mt-1">{errors.country.message}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Delivery Instructions (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  {...register("notes")}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all"
+                  placeholder="e.g. Leave package by front door"
+                />
+              </div>
+            </div>
+
+            {/* Payment Method Card */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                  2
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Payment Option</h2>
+                  <p className="text-xs text-slate-500">Choose how you want to pay</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {/* Cash on Delivery Option */}
+                <label className={`block p-4 rounded-2xl border transition-all cursor-pointer ${
+                  watch("paymentMethod") === "cash_on_delivery" 
+                    ? "border-indigo-600 bg-indigo-50/60 ring-1 ring-indigo-600" 
+                    : "border-slate-200 bg-white hover:border-indigo-300"
+                }`}>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center">
+                      <input 
+                        type="radio" 
+                        value="cash_on_delivery" 
+                        {...register("paymentMethod")} 
+                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-600" 
+                      />
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shadow-sm shrink-0">
+                      <IndianRupee className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold text-slate-900">Cash on Delivery</h4>
+                      <p className="text-xs text-slate-500">Pay in cash when you receive the order</p>
+                    </div>
+                  </div>
+                </label>
+
+                {/* Card Payment Option */}
+                <label className={`block p-4 rounded-2xl border transition-all cursor-pointer ${
+                  watch("paymentMethod") === "card" 
+                    ? "border-indigo-600 bg-indigo-50/60 ring-1 ring-indigo-600" 
+                    : "border-slate-200 bg-white hover:border-indigo-300"
+                }`}>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-center">
+                      <input 
+                        type="radio" 
+                        value="card" 
+                        {...register("paymentMethod")} 
+                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-600" 
+                      />
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold text-slate-900">Card Payment</h4>
+                      <p className="text-xs text-slate-500">Instant secure checkout via Stripe</p>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-1 text-emerald-700 text-[10px] font-bold bg-emerald-50 px-2 py-1 rounded-full border border-emerald-200">
+                      <Lock className="w-3 h-3" /> SSL
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-500 pt-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  Clicking Complete Order will verify inventory, record your purchase, and finalize your order.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right column: Sticky Order Review */}
+          <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 space-y-6 shadow-sm sticky top-24">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h2 className="text-lg font-bold text-slate-900">Order Summary</h2>
+              <span className="text-xs text-slate-500 font-semibold">
+                {items.length} item{items.length > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Cart Item Previews */}
+            <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
+              {items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                      <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 truncate text-xs sm:text-sm">{item.product_name}</p>
+                      <p className="text-[11px] text-slate-500">Qty: {item.quantity}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                      ₹{Number(item.line_total).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Cost breakdown */}
+            <div className="space-y-2.5 text-sm border-t border-slate-100 pt-4">
+              <div className="flex justify-between text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-bold text-slate-900">₹{subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Shipping</span>
+                <span>
+                  {shipping === 0 ? (
+                    <span className="text-emerald-700 font-bold text-xs uppercase">Free</span>
+                  ) : (
+                    `₹${shipping.toFixed(2)}`
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Estimated Tax (8%)</span>
+                <span className="font-bold text-slate-900">₹{tax.toFixed(2)}</span>
+              </div>
+              <div className="border-t border-slate-200 pt-3 flex justify-between text-base font-extrabold text-slate-900">
+                <span>Total Due</span>
+                <span className="text-2xl text-indigo-600">₹{total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Place Order CTA Button */}
+            <button
+              type="submit"
+              disabled={submitting || items.length === 0}
+              className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-98 disabled:opacity-50"
+            >
+              <Lock className="w-4 h-4" />
+              <span>{submitting ? "Placing Order..." : `Complete Order — ₹${total.toFixed(2)}`}</span>
+            </button>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-500 flex items-center gap-2">
+              <Truck className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>Express doorstep delivery in 2-4 business days.</span>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Order Confirmed</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+    .container { background: #fff; max-width: 600px; margin: 0 auto; border-radius: 8px; padding: 32px; }
+    .header { background: #4f46e5; color: white; padding: 24px; border-radius: 8px 8px 0 0; text-align: center; }
+    .badge { background: #22c55e; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th, td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    th { background: #f9fafb; font-weight: 600; }
+    .total-row { font-weight: bold; background: #f0f9ff; }
+    .footer { text-align: center; color: #6b7280; font-size: 12px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🛒 Smart E-Commerce</h1>
+      <span class="badge">✓ Order Confirmed</span>
+    </div>
+    <div style="padding: 24px;">
+      <p>Hi <strong>{{ user.name }}</strong>,</p>
+      <p>Your order has been confirmed and is being prepared!</p>
+      <h3>Order #{{ order.order_number }}</h3>
+      <table>
+        <tr><th>Product</th><th>Qty</th><th>Price</th></tr>
+        {% for item in order.items %}
+        <tr>
+          <td>{{ item.product_name_snapshot }}</td>
+          <td>{{ item.quantity }}</td>
+          <td>${{ "%.2f"|format(item.subtotal) }}</td>
+        </tr>
+        {% endfor %}
+        <tr><td colspan="2">Subtotal</td><td>${{ "%.2f"|format(order.subtotal) }}</td></tr>
+        <tr><td colspan="2">Tax</td><td>${{ "%.2f"|format(order.tax) }}</td></tr>
+        <tr><td colspan="2">Shipping</td><td>${{ "%.2f"|format(order.shipping_cost) }}</td></tr>
+        <tr class="total-row"><td colspan="2">TOTAL</td><td>${{ "%.2f"|format(order.total) }}</td></tr>
+      </table>
+      {% if order.shipping_address %}
+      <p><strong>Shipping to:</strong><br>{{ order.shipping_address }}</p>
+      {% endif %}
+      <p>We'll notify you when your order ships.</p>
+      <p>Thank you for shopping with us! 🎉</p>
+    </div>
+    <div class="footer">Smart E-Commerce Platform | Do not reply to this email</div>
+  </div>
+</body>
+</html>

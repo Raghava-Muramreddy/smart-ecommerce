@@ -1,0 +1,410 @@
+{
+  "info": {
+    "name": "Smart E-Commerce Platform API Collection",
+    "_postman_id": "c1f73b88-1234-4b52-9c44-59e8e0186981",
+    "description": "Complete Postman collection for the Smart E-Commerce Platform.\nSupports Customer APIs, Staff/Admin APIs, Auth0 & JWT auth, Cart, Orders, Checkout, Stripe, Analytics, Reports, and Notifications.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "refresh_token", "value": "", "type": "string" },
+    { "key": "product_id", "value": "", "type": "string" },
+    { "key": "category_id", "value": "", "type": "string" },
+    { "key": "order_id", "value": "", "type": "string" },
+    { "key": "cart_item_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Johnson\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.tokens) {",
+                  "  pm.collectionVariables.set('access_token', json.data.tokens.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', json.data.tokens.refresh_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Current Profile (Me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Social Auth (Auth0 / Google / Facebook)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"google\",\n  \"access_token\": \"auth0_or_google_oauth_token_here\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/social",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "social"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Categories",
+      "item": [
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/categories",
+              "host": ["{{base_url}}"],
+              "path": ["categories"]
+            }
+          }
+        },
+        {
+          "name": "Create Category (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Smart Electronics\",\n  \"description\": \"Smart gadgets, IoT, and wearables\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/categories",
+              "host": ["{{base_url}}"],
+              "path": ["categories"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Products",
+      "item": [
+        {
+          "name": "List Products (Search & Filter & Sort)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/products?search=phone&sort=price_asc&in_stock=true&page=1&page_size=20",
+              "host": ["{{base_url}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "search", "value": "phone" },
+                { "key": "sort", "value": "price_asc" },
+                { "key": "in_stock", "value": "true" },
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Product Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["products", "{{product_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Product (Staff/Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pro Wireless Headphones\",\n  \"sku\": \"AUDIO-PRO-90\",\n  \"price\": 149.99,\n  \"stock\": 50,\n  \"category_id\": \"{{category_id}}\",\n  \"description\": \"Active noise cancellation with 40h battery life.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": ["{{base_url}}"],
+              "path": ["products"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Cart",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/cart",
+              "host": ["{{base_url}}"],
+              "path": ["cart"]
+            }
+          }
+        },
+        {
+          "name": "Add Item to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{product_id}}\",\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/cart/items",
+              "host": ["{{base_url}}"],
+              "path": ["cart", "items"]
+            }
+          }
+        },
+        {
+          "name": "Update Cart Item Quantity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/cart/items/{{cart_item_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["cart", "items", "{{cart_item_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Remove Item from Cart",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/cart/items/{{cart_item_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["cart", "items", "{{cart_item_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Checkout & Orders",
+      "item": [
+        {
+          "name": "Checkout (Create Order & Stripe Session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shipping_address\": \"100 Market Street, San Francisco, CA 94105, USA\",\n  \"notes\": \"Leave with doorman\",\n  \"success_url\": \"http://localhost:3000/checkout/success\",\n  \"cancel_url\": \"http://localhost:3000/cart\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["checkout"]
+            }
+          }
+        },
+        {
+          "name": "List Customer Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/orders?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["orders"]
+            }
+          }
+        },
+        {
+          "name": "Get Order Tracking Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["orders", "{{order_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Notifications & WebSockets",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications?unread_only=false",
+              "host": ["{{base_url}}"],
+              "path": ["notifications"]
+            }
+          }
+        },
+        {
+          "name": "Mark All Notifications Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notifications/read-all",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "read-all"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Analytics & Reports (Staff/Admin)",
+      "item": [
+        {
+          "name": "Get Dashboard KPIs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/analytics/dashboard?period=30d",
+              "host": ["{{base_url}}"],
+              "path": ["analytics", "dashboard"],
+              "query": [{ "key": "period", "value": "30d" }]
+            }
+          }
+        },
+        {
+          "name": "Export Sales Report (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/reports/sales?format=csv",
+              "host": ["{{base_url}}"],
+              "path": ["reports", "sales"],
+              "query": [{ "key": "format", "value": "csv" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
