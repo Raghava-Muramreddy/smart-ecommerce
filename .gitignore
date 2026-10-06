@@ -2,3 +2,7 @@
 .env
 .env.*
 *.env
+node_modules
+*frontend/web/node_modules
+*backend/django/node_modules
+*backend/fastapi/node_modules

@@ -241,88 +241,69 @@ async def create_checkout(
                 user_id=current_user.id,
             )
         else:
-            # Create Stripe Checkout Session
+            # Create Stripe Checkout Session (redirect to Stripe's hosted payment page)
+            if (
+                not settings.STRIPE_SECRET_KEY
+                or settings.STRIPE_SECRET_KEY.startswith("sk_test_your")
+                or settings.STRIPE_SECRET_KEY.startswith("sk_test_mock")
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Stripe Secret Key is not configured. Please add your Stripe test secret key (sk_test_...) to backend/fastapi/.env to redirect to Stripe Checkout."
+                )
+
             stripe_line_items = [
                 {
                     "price_data": {
                         "currency": "inr",
                         "product_data": {"name": li["product"].name},
-                        "unit_amount": int(li["unit_price"] * 100),  # Stripe uses paise for INR
+                        "unit_amount": int(round(float(li["unit_price"]) * 100)),
                     },
                     "quantity": li["quantity"],
                 }
                 for li in line_items
             ]
-            # Add tax and shipping as line items
-            stripe_line_items.append({
-                "price_data": {
-                    "currency": "inr",
-                    "product_data": {"name": "Tax (GST)"},
-                    "unit_amount": int(tax * 100),
-                },
-                "quantity": 1,
-            })
-            stripe_line_items.append({
-                "price_data": {
-                    "currency": "inr",
-                    "product_data": {"name": "Shipping"},
-                    "unit_amount": int(shipping * 100),
-                },
-                "quantity": 1,
-            })
+            if tax > 0:
+                stripe_line_items.append({
+                    "price_data": {
+                        "currency": "inr",
+                        "product_data": {"name": "Tax (GST)"},
+                        "unit_amount": int(round(float(tax) * 100)),
+                    },
+                    "quantity": 1,
+                })
+            if shipping > 0:
+                stripe_line_items.append({
+                    "price_data": {
+                        "currency": "inr",
+                        "product_data": {"name": "Shipping"},
+                        "unit_amount": int(round(float(shipping) * 100)),
+                    },
+                    "quantity": 1,
+                })
 
-            if settings.STRIPE_SECRET_KEY and not settings.STRIPE_SECRET_KEY.startswith("sk_test_mock"):
-                try:
-                    stripe.api_key = settings.STRIPE_SECRET_KEY
-                    session = stripe.checkout.Session.create(
-                        payment_method_types=["card"],
-                        line_items=stripe_line_items,
-                        mode="payment",
-                        success_url=payload.success_url + f"?order_id={order.id}",
-                        cancel_url=payload.cancel_url + f"?order_id={order.id}",
-                        metadata={"order_id": order.id, "user_id": current_user.id},
-                        customer_email=current_user.email,
-                        client_reference_id=order.id,
-                    )
-                    order.stripe_session_id = session.id
-                    checkout_url = session.url
-                    session_id = session.id
-                    payment.transaction_id = session.payment_intent if hasattr(session, "payment_intent") else None
-                except stripe.StripeError as e:
-                    logger.warning(f"Stripe error: {e}. Falling back to instant order fulfillment.")
-
-            if not checkout_url:
-                order.order_status = OrderStatus.PROCESSING
-                order.payment_status = PaymentStatus.SUCCESS
-                payment.status = PaymentStatus.SUCCESS
-                payment.transaction_id = f"sim_{order.order_number}"
-
-                # Decrement stock atomically
-                for li in line_items:
-                    li["product"].stock -= li["quantity"]
-
-                # Clear cart items
-                await db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
-
-                session_id = f"sim_sess_{order.id}"
-
-                # Trigger notification & email asynchronously
-                background_tasks.add_task(
-                    notification_service.notify_payment_success,
-                    order_id=order.id,
-                    user_id=current_user.id,
+            try:
+                stripe.api_key = settings.STRIPE_SECRET_KEY
+                session = stripe.checkout.Session.create(
+                    payment_method_types=["card"],
+                    line_items=stripe_line_items,
+                    mode="payment",
+                    success_url=payload.success_url + f"?order_id={order.id}&session_id={{CHECKOUT_SESSION_ID}}",
+                    cancel_url=payload.cancel_url + f"?order_id={order.id}",
+                    metadata={"order_id": order.id, "user_id": current_user.id},
+                    customer_email=current_user.email,
+                    client_reference_id=order.id,
                 )
-                background_tasks.add_task(
-                    notification_service.notify_order_status_change,
-                    order_id=order.id,
-                    user_id=current_user.id,
-                    new_status=OrderStatus.CONFIRMED,
-                )
-                background_tasks.add_task(
-                    email_service.send_order_confirmation,
-                    order_id=order.id,
-                    user_id=current_user.id,
-                )
+                order.stripe_session_id = session.id
+                checkout_url = session.url
+                session_id = session.id
+                payment.transaction_id = session.payment_intent if hasattr(session, "payment_intent") else None
+            except stripe.StripeError as e:
+                logger.error(f"Stripe error creating checkout session: {e}")
+                err_msg = getattr(e, "user_message", None) or str(e)
+                raise HTTPException(status_code=400, detail=f"Stripe checkout error: {err_msg}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error during checkout: {e}")
         raise HTTPException(status_code=500, detail=f"Checkout error: {str(e)}")
@@ -340,6 +321,78 @@ async def create_checkout(
         },
         message="Order created successfully",
         status_code=201,
+    )
+
+
+@checkout_router.post("/confirm-payment/{order_id}", response_model=dict, summary="Confirm card payment for order")
+async def confirm_payment(
+    order_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .options(selectinload(Order.items).selectinload(OrderItem.product), selectinload(Order.payment))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if current_user.role == UserRole.CUSTOMER and order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if order.payment_status == PaymentStatus.SUCCESS:
+        return success_response(
+            data={"order_id": order.id, "order_number": order.order_number, "status": "already_paid"},
+            message="Payment already completed"
+        )
+
+    # 1. Update order and payment status
+    order.order_status = OrderStatus.CONFIRMED
+    order.payment_status = PaymentStatus.SUCCESS
+
+    if order.payment:
+        order.payment.status = PaymentStatus.SUCCESS
+        order.payment.payment_method = "card"
+        order.payment.transaction_id = f"card_tx_{order.order_number}"
+
+    # 2. Decrement stock atomically
+    for item in order.items:
+        if item.product:
+            item.product.stock = max(0, item.product.stock - item.quantity)
+
+    # 3. Clear user's cart
+    cart_result = await db.execute(select(Cart).where(Cart.user_id == current_user.id))
+    cart = cart_result.scalar_one_or_none()
+    if cart:
+        await db.execute(delete(CartItem).where(CartItem.cart_id == cart.id))
+
+    await db.commit()
+    await db.refresh(order)
+
+    # 4. Trigger notifications and emails
+    background_tasks.add_task(
+        notification_service.notify_payment_success,
+        order_id=order.id,
+        user_id=current_user.id,
+    )
+    background_tasks.add_task(
+        notification_service.notify_order_status_change,
+        order_id=order.id,
+        user_id=current_user.id,
+        new_status=OrderStatus.CONFIRMED,
+    )
+    background_tasks.add_task(
+        email_service.send_order_confirmation,
+        order_id=order.id,
+        user_id=current_user.id,
+    )
+
+    return success_response(
+        data={"order_id": order.id, "order_number": order.order_number, "status": "paid"},
+        message="Payment confirmed successfully"
     )
 
 

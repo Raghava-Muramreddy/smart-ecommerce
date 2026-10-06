@@ -45,6 +45,11 @@ const ordersApi = {
     const response = await api.post("/checkout", data);
     return response.data.data as { order_id: string; checkout_url: string; session_id: string; total: number };
   },
+
+  confirmPayment: async (orderId: string) => {
+    const response = await api.post(`/checkout/confirm-payment/${orderId}`);
+    return response.data.data as { order_id: string; order_number: string; status: string };
+  },
 };
 
 export default ordersApi;
